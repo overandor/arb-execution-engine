@@ -1,0 +1,286 @@
+openapi: 3.0.0
+info:
+  title: Arb Execution Engine API
+  description: Solana arbitrage execution engine with truthful accounting
+  version: 1.0.0
+  contact:
+    name: API Support
+servers:
+  - url: http://localhost:8000
+    description: Local development
+  - url: https://api.arb-execution-engine.com
+    description: Production
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      description: Check if the API is running
+      responses:
+        '200':
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: healthy
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /trade:
+    post:
+      summary: Execute a trade
+      description: Execute a single arbitrage trade with on-chain verification
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - token
+                - input_mint
+                - output_mint
+                - amount_lamports
+              properties:
+                token:
+                  type: string
+                  example: SOL→USDC
+                  description: Token pair identifier
+                input_mint:
+                  type: string
+                  example: So11111111111111111111111111111111111111112
+                  description: Input token mint address
+                output_mint:
+                  type: string
+                  example: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+                  description: Output token mint address
+                amount_lamports:
+                  type: integer
+                  example: 10000000
+                  description: Amount in lamports
+                dry_run:
+                  type: boolean
+                  example: false
+                  description: If true, run without executing transaction
+      responses:
+        '200':
+          description: Trade executed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TradeResult'
+        '400':
+          description: Bad request
+        '500':
+          description: Server error
+
+  /trades:
+    get:
+      summary: Get trade history
+      description: Retrieve recent trades from database
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+          description: Number of trades to return
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [success, failed, dropped, killed, dry_run]
+          description: Filter by status
+      responses:
+        '200':
+          description: List of trades
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Trade'
+
+  /trades/{id}:
+    get:
+      summary: Get trade by ID
+      description: Retrieve a specific trade by database ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Trade details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Trade'
+        '404':
+          description: Trade not found
+
+  /metrics:
+    get:
+      summary: Get performance metrics
+      description: Calculate performance metrics from trade history
+      responses:
+        '200':
+          description: Metrics
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Metrics'
+
+  /scanner/opportunities:
+    get:
+      summary: Scan for opportunities
+      description: Detect arbitrage opportunities across DEXes
+      parameters:
+        - name: min_spread_pct
+          in: query
+          schema:
+            type: number
+            default: 0.5
+          description: Minimum spread percentage
+      responses:
+        '200':
+          description: List of opportunities
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Opportunity'
+
+components:
+  schemas:
+    TradeResult:
+      type: object
+      properties:
+        token:
+          type: string
+        input_amount:
+          type: number
+        expected_output:
+          type: number
+          nullable: true
+        actual_output:
+          type: number
+          nullable: true
+        expected_profit:
+          type: number
+          nullable: true
+        actual_profit:
+          type: number
+          nullable: true
+        latency_ms:
+          type: number
+          nullable: true
+        status:
+          type: string
+          enum: [success, failed, dropped, killed, dry_run, slippage_exceeded, timeout, insufficient_edge, submitted]
+        error:
+          type: string
+          nullable: true
+        transaction_id:
+          type: string
+          nullable: true
+        priority_fee:
+          type: number
+          nullable: true
+
+    Trade:
+      type: object
+      properties:
+        id:
+          type: integer
+        token:
+          type: string
+        input_amount:
+          type: number
+        expected_output:
+          type: number
+          nullable: true
+        actual_output:
+          type: number
+          nullable: true
+        expected_profit:
+          type: number
+          nullable: true
+        actual_profit:
+          type: number
+          nullable: true
+        latency_ms:
+          type: number
+          nullable: true
+        status:
+          type: string
+        error:
+          type: string
+          nullable: true
+        transaction_id:
+          type: string
+          nullable: true
+        priority_fee:
+          type: number
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+
+    Metrics:
+      type: object
+      properties:
+        total_trades:
+          type: integer
+        successful_trades:
+          type: integer
+        win_rate:
+          type: number
+          format: float
+        total_pnl:
+          type: number
+        avg_profit:
+          type: number
+
+    Opportunity:
+      type: object
+      properties:
+        token:
+          type: string
+        dex_a:
+          type: string
+        dex_b:
+          type: string
+        price_a:
+          type: number
+        price_b:
+          type: number
+        spread_pct:
+          type: number
+        liquidity_a:
+          type: number
+        liquidity_b:
+          type: number
+        timestamp:
+          type: string
+          format: date-time
+        token_address:
+          type: string
+          nullable: true
+
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - bearerAuth: []
