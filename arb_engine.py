@@ -17,17 +17,18 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 try:
-    from solana.keypair import Keypair
-    from solana.publickey import PublicKey
+    from solders.keypair import Keypair
+    from solders.pubkey import Pubkey as PublicKey
     from solders.transaction import VersionedTransaction
-    from solana.rpc.api import Client
+    from solana.rpc.async_api import AsyncClient
     from solana.rpc.types import TxOpts
-except ImportError:
+    Client = AsyncClient
+except ImportError as e:
     Keypair = None
     PublicKey = None
     VersionedTransaction = None
     Client = None
-    print("⚠️  solana-py not installed. Transaction confirmation disabled.")
+    print(f"⚠️  solana-py not installed. Transaction confirmation disabled. Error: {e}")
 
 load_dotenv()
 
@@ -224,16 +225,16 @@ class Signer:
                 self.keypair = Keypair.from_secret_key(bytes(keypair_data))
         else:
             self.keypair = Keypair()
-            print(f"Generated new keypair. Public key: {self.keypair.public_key}")
-            print(f"Private key (base64): {base64.b64encode(self.keypair.secret()).decode()}")
+            print(f"Generated new keypair. Public key: {self.keypair.pubkey()}")
+            print(f"Private key (base64): {base64.b64encode(bytes(self.keypair.secret())).decode()}")
     
     @property
     def public_key(self) -> str:
-        return str(self.keypair.public_key)
+        return str(self.keypair.pubkey())
     
     @property
     def private_key_base64(self) -> str:
-        return base64.b64encode(self.keypair.secret()).decode()
+        return base64.b64encode(bytes(self.keypair.secret())).decode()
     
     def save_keypair(self, path: str):
         """Save keypair to file"""
@@ -435,7 +436,7 @@ class ExecutionEngine:
         # Initialize components
         self.signer = Signer(private_key=self.private_key)
         self.db = TradeDatabase()
-        self.rpc_client = Client(self.rpc_url) if Client else None
+        self.rpc_client = None  # Will be initialized in __aenter__ if needed
         self.scanner: Optional[Scanner] = None
         self.builder: Optional[TransactionBuilder] = None
         self.executor: Optional[JitoExecutor] = None
@@ -444,6 +445,9 @@ class ExecutionEngine:
         self.scanner = Scanner(self.rpc_url)
         self.builder = TransactionBuilder()
         self.executor = JitoExecutor(self.jito_endpoint)
+        
+        if Client:
+            self.rpc_client = Client(self.rpc_url)
         
         await self.scanner.__aenter__()
         await self.builder.__aenter__()
@@ -458,14 +462,16 @@ class ExecutionEngine:
             await self.builder.__aexit__(exc_type, exc_val, exc_tb)
         if self.executor:
             await self.executor.__aexit__(exc_type, exc_val, exc_tb)
+        if self.rpc_client:
+            await self.rpc_client.close()
     
-    def get_confirmed_transaction(self, signature: str) -> Optional[Dict]:
+    async def get_confirmed_transaction(self, signature: str) -> Optional[Dict]:
         """Fetch confirmed transaction from RPC"""
         if not self.rpc_client:
             return None
         
         try:
-            tx = self.rpc_client.get_transaction(
+            tx = await self.rpc_client.get_transaction(
                 signature,
                 encoding="jsonParsed",
                 max_supported_transaction_version=0
@@ -506,15 +512,15 @@ class ExecutionEngine:
             return 0.0
         return float(tx_meta['fee'])
     
-    def wait_for_confirmation(self, signature: str, retries: int = 10, delay: float = 1.0) -> Optional[Dict]:
+    async def wait_for_confirmation(self, signature: str, retries: int = 10, delay: float = 1.0) -> Optional[Dict]:
         """Wait for transaction confirmation with retry logic"""
         for attempt in range(retries):
-            tx_meta = self.get_confirmed_transaction(signature)
+            tx_meta = await self.get_confirmed_transaction(signature)
             if tx_meta:
                 return tx_meta
             
             if attempt < retries - 1:
-                time.sleep(delay)
+                await asyncio.sleep(delay)
         
         return None
     
@@ -675,7 +681,7 @@ class ExecutionEngine:
             
             # Step 7: Confirm on-chain with retry
             print("Step 7: Confirming transaction...")
-            tx_meta = self.wait_for_confirmation(result.transaction_id, retries=10, delay=1.0)
+            tx_meta = await self.wait_for_confirmation(result.transaction_id, retries=10, delay=1.0)
             
             if tx_meta:
                 print("  ✓ Confirmed on-chain")
