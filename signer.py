@@ -49,7 +49,7 @@ class Signer:
     
     def sign_transaction(self, transaction_b64: str) -> str:
         """
-        Sign a base64-encoded transaction
+        Sign a base64-encoded transaction from Jupiter
         
         Returns signed transaction in base64
         """
@@ -65,6 +65,24 @@ class Signer:
         # Serialize and encode
         signed_data = bytes(transaction)
         return b64encode(signed_data).decode()
+    
+    def sign_transaction_bytes(self, transaction_b64: str) -> bytes:
+        """
+        Sign a base64-encoded transaction and return bytes
+        
+        Returns signed transaction as bytes (for Jito submission)
+        """
+        transaction_data = b64decode(transaction_b64)
+        transaction = VersionedTransaction.deserialize(transaction_data)
+        
+        # Sign the transaction
+        signature = self.keypair.sign_message(transaction.message)
+        
+        # Add signature to transaction
+        transaction.signatures = [signature]
+        
+        # Serialize and return bytes
+        return bytes(transaction)
     
     @staticmethod
     def generate_keypair() -> Keypair:

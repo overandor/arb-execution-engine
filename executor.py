@@ -4,7 +4,8 @@ Executor - Jito bundle submission for MEV-protected execution
 
 import asyncio
 import aiohttp
-from typing import Dict, Optional, List
+import base64
+from typing import Dict, Optional
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -17,7 +18,7 @@ class ExecutionResult:
     slot: Optional[int] = None
 
 class JitoExecutor:
-    def __init__(self, jito_endpoint: str = "https://mainnet.block-engine.jito.wtf/api/v1/transactions"):
+    def __init__(self, jito_endpoint: str = "https://mainnet.block-engine.jito.wtf/api/v1/bundles"):
         self.jito_endpoint = jito_endpoint
         self.session: Optional[aiohttp.ClientSession] = None
 
@@ -29,34 +30,31 @@ class JitoExecutor:
         if self.session:
             await self.session.close()
 
-    async def submit_bundle(self, signed_transactions: List[str], tip_lamports: int = 10000) -> ExecutionResult:
+    async def send_bundle(self, serialized_tx: bytes) -> ExecutionResult:
         """
-        Submit a Jito bundle for execution
+        Submit a single transaction via Jito bundle
         
         Args:
-            signed_transactions: List of base64-encoded signed transactions
-            tip_lamports: Tip amount for Jito validators
+            serialized_tx: Serialized transaction bytes
         
         Returns execution result
         """
+        # Encode transaction as base64
+        encoded_tx = base64.b64encode(serialized_tx).decode()
+        
         payload = {
             "jsonrpc": "2.0",
             "id": 1,
             "method": "sendBundle",
-            "params": [
-                signed_transactions,
-                {
-                    "tipLamports": tip_lamports,
-                    "bundleOnly": True
-                }
-            ]
+            "params": [[encoded_tx]]
         }
 
         try:
             async with self.session.post(
                 self.jito_endpoint,
                 json=payload,
-                headers={"Content-Type": "application/json"}
+                headers={"Content-Type": "application/json"},
+                timeout=10
             ) as response:
                 data = await response.json()
                 
@@ -68,12 +66,20 @@ class JitoExecutor:
                         executed_at=datetime.utcnow()
                     )
                 else:
+                    error_msg = data.get('error', {}).get('message', 'Unknown error')
                     return ExecutionResult(
                         success=False,
                         transaction_id=None,
-                        error=data.get('error', {}).get('message', 'Unknown error'),
+                        error=error_msg,
                         executed_at=datetime.utcnow()
                     )
+        except asyncio.TimeoutError:
+            return ExecutionResult(
+                success=False,
+                transaction_id=None,
+                error="Timeout waiting for Jito response",
+                executed_at=datetime.utcnow()
+            )
         except Exception as e:
             return ExecutionResult(
                 success=False,
@@ -81,37 +87,15 @@ class JitoExecutor:
                 error=str(e),
                 executed_at=datetime.utcnow()
             )
-    
-    async def get_bundle_status(self, bundle_id: str) -> Dict:
-        """
-        Check bundle status
-        
-        Args:
-            bundle_id: Bundle ID from submission
-        
-        Returns bundle status information
-        """
-        payload = {
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "getBundleStatuses",
-            "params": [[bundle_id]]
-        }
-
-        async with self.session.post(
-            self.jito_endpoint,
-            json=payload,
-            headers={"Content-Type": "application/json"}
-        ) as response:
-            return await response.json()
 
 
 async def main():
     """Test executor"""
     async with JitoExecutor() as executor:
         # This would be called with actual signed transactions
-        result = await executor.submit_bundle(["dummy_tx"], tip_lamports=10000)
-        print(f"Execution result: {result}")
+        # For testing, we'll just print the endpoint
+        print(f"Jito endpoint: {executor.jito_endpoint}")
+        print("Executor ready - requires actual signed transaction bytes")
 
 
 if __name__ == "__main__":

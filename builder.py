@@ -1,10 +1,10 @@
 """
-Transaction Builder - Constructs Jupiter swap instructions and Jito bundles
+Transaction Builder - Constructs Jupiter swap instructions with priority fees
 """
 
 import asyncio
 import aiohttp
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from dataclasses import dataclass
 from base64 import b64encode
 
@@ -13,13 +13,14 @@ class SwapParams:
     input_mint: str
     output_mint: str
     amount: int
-    slippage_bps: int = 100  # 1%
+    slippage_bps: int = 50  # 0.5% (more conservative)
 
 @dataclass
 class BuiltTransaction:
     transaction: str  # Base64 encoded
     last_valid_block_height: int
-    prioritization_fee: int
+    expected_output: int
+    expected_profit: float
 
 class TransactionBuilder:
     def __init__(self, jupiter_api: str = "https://quote-api.jup.ag/v6"):
@@ -38,7 +39,7 @@ class TransactionBuilder:
         """
         Get swap quote from Jupiter API
         
-        Returns quote with swap instructions
+        Returns quote with route information
         """
         url = f"{self.jupiter_api}/quote"
         
@@ -52,11 +53,38 @@ class TransactionBuilder:
         }
 
         async with self.session.post(url, json=payload) as response:
-            return await response.json()
+            data = await response.json()
+            
+            if 'error' in data:
+                raise Exception(f"Jupiter quote error: {data['error']}")
+            
+            return data
 
-    async def get_jupiter_swap_transaction(self, quote: Dict, user_public_key: str) -> BuiltTransaction:
+    async def get_jupiter_swap_instructions(self, quote: Dict, user_public_key: str) -> Dict:
         """
-        Get the actual swap transaction from Jupiter
+        Get swap instructions from Jupiter (not full tx)
+        
+        Returns instructions ready for transaction building
+        """
+        url = f"{self.jupiter_api}/swap-instructions"
+        
+        payload = {
+            "quoteResponse": quote,
+            "userPublicKey": user_public_key,
+            "wrapAndUnwrapSol": True
+        }
+
+        async with self.session.post(url, json=payload) as response:
+            data = await response.json()
+            
+            if 'error' in data:
+                raise Exception(f"Jupiter instructions error: {data['error']}")
+            
+            return data
+
+    async def get_jupiter_swap_transaction(self, quote: Dict, user_public_key: str) -> Dict:
+        """
+        Get pre-built swap transaction from Jupiter
         
         Returns base64-encoded transaction ready to sign
         """
@@ -72,30 +100,51 @@ class TransactionBuilder:
         async with self.session.post(url, json=payload) as response:
             data = await response.json()
             
-            return BuiltTransaction(
-                transaction=data['swapTransaction'],
-                last_valid_block_height=data.get('lastValidBlockHeight', 0),
-                prioritization_fee=data.get('prioritizationFeeLamports', 0)
-            )
+            if 'error' in data:
+                raise Exception(f"Jupiter transaction error: {data['error']}")
+            
+            return {
+                'swapTransaction': data.get('swapTransaction'),
+                'lastValidBlockHeight': data.get('lastValidBlockHeight', 0)
+            }
 
-    async def build_jito_bundle(self, transactions: list, tip_lamports: int = 10000) -> Dict:
+    def calculate_expected_profit(self, quote: Dict, input_amount: int) -> float:
         """
-        Build a Jito bundle for MEV-protected execution
+        Calculate expected profit after fees and slippage
         
         Args:
-            transactions: List of base64-encoded transactions
-            tip_lamports: Tip amount for Jito validators
+            quote: Jupiter quote response
+            input_amount: Input amount in lamports
         
-        Returns bundle data ready for submission
+        Returns expected profit in lamports
         """
-        # Jito bundle format
-        bundle = {
-            "transactions": transactions,
-            "tip_lamports": tip_lamports,
-            "revert_on_fail": True
-        }
+        out_amount = int(quote.get('outAmount', 0))
+        in_amount = int(quote.get('inAmount', input_amount))
         
-        return bundle
+        # Simple profit calculation (can be refined with gas fees)
+        profit = out_amount - in_amount
+        
+        return float(profit)
+
+    def is_profitable(self, quote: Dict, input_amount: int, min_profit_lamports: int = 1000) -> bool:
+        """
+        Post-build validation: check if trade is actually profitable
+        
+        Args:
+            quote: Jupiter quote response
+            input_amount: Input amount in lamports
+            min_profit_lamports: Minimum profit threshold
+        
+        Returns True if profitable after validation
+        """
+        profit = self.calculate_expected_profit(quote, input_amount)
+        
+        # Account for priority fees (estimate)
+        estimated_fees = 5000  # Conservative estimate in lamports
+        
+        net_profit = profit - estimated_fees
+        
+        return net_profit >= min_profit_lamports
 
 
 async def main():
@@ -105,13 +154,20 @@ async def main():
         params = SwapParams(
             input_mint="So11111111111111111111111111111111111111112",  # SOL
             output_mint="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",  # USDC
-            amount=1_000_000_000,  # 1 SOL in lamports
-            slippage_bps=100  # 1%
+            amount=100_000_000,  # 0.1 SOL in lamports (small test amount)
+            slippage_bps=50  # 0.5%
         )
         
-        quote = await builder.get_jupiter_quote(params)
-        print("Quote:", json.dumps(quote, indent=2))
+        try:
+            quote = await builder.get_jupiter_quote(params)
+            print("Quote:", quote.get('outAmount'), "output")
+            
+            # Validate profitability
+            is_profitable = builder.is_profitable(quote, params.amount)
+            print(f"Is profitable: {is_profitable}")
+            
+        except Exception as e:
+            print(f"Error: {e}")
 
 if __name__ == "__main__":
-    import json
     asyncio.run(main())
