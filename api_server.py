@@ -143,32 +143,17 @@ async def get_metrics():
     return db.get_metrics()
 
 
-@app.get("/scanner/opportunities")
-async def scan_opportunities(min_spread_pct: float = 0.5):
-    """Scan for arbitrage opportunities"""
-    if not engine:
-        raise HTTPException(status_code=503, detail="Engine not initialized")
-    
-    if not engine.scanner:
-        raise HTTPException(status_code=503, detail="Scanner not initialized")
-    
-    opportunities = await engine.scanner.detect_opportunities(min_spread_pct=min_spread_pct)
-    
-    return [
-        {
-            "token": opp.token,
-            "dex_a": opp.dex_a,
-            "dex_b": opp.dex_b,
-            "price_a": opp.price_a,
-            "price_b": opp.price_b,
-            "spread_pct": opp.spread_pct,
-            "liquidity_a": opp.liquidity_a,
-            "liquidity_b": opp.liquidity_b,
-            "timestamp": opp.timestamp.isoformat(),
-            "token_address": opp.token_address
-        }
-        for opp in opportunities
-    ]
+# REMOVED: /scanner/opportunities endpoint
+# 
+# Exposing raw opportunities via API creates:
+# - Race conditions (multiple users competing for same trade)
+# - Stale signals (perishable by the time consumed)
+# - Front-running risk
+# - Self-competition (you become your own worst enemy)
+#
+# Instead, use /trade to execute directly.
+# Engine handles edge detection internally to preserve alpha.
+
 
 
 if __name__ == "__main__":

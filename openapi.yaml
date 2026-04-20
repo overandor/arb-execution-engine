@@ -141,26 +141,17 @@ paths:
               schema:
                 $ref: '#/components/schemas/Metrics'
 
-  /scanner/opportunities:
-    get:
-      summary: Scan for opportunities
-      description: Detect arbitrage opportunities across DEXes
-      parameters:
-        - name: min_spread_pct
-          in: query
-          schema:
-            type: number
-            default: 0.5
-          description: Minimum spread percentage
-      responses:
-        '200':
-          description: List of opportunities
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  $ref: '#/components/schemas/Opportunity'
+# REMOVED: /scanner/opportunities endpoint
+# 
+# Exposing raw opportunities via API creates:
+# - Race conditions (multiple users competing for same trade)
+# - Stale signals (perishable by the time consumed)
+# - Front-running risk
+# - Self-competition (you become your own worst enemy)
+#
+# Architecture decision: Engine handles edge detection internally.
+# API is for execution control and reporting, not signal distribution.
+# This preserves alpha and prevents self-cannibalization.
 
 components:
   schemas:
@@ -305,30 +296,4 @@ components:
           format: float
           example: 0.1
           description: Percentage of trades that were dropped (never landed)
-
-    Opportunity:
-      type: object
-      properties:
-        token:
-          type: string
-        dex_a:
-          type: string
-        dex_b:
-          type: string
-        price_a:
-          type: number
-        price_b:
-          type: number
-        spread_pct:
-          type: number
-        liquidity_a:
-          type: number
-        liquidity_b:
-          type: number
-        timestamp:
-          type: string
-          format: date-time
-        token_address:
-          type: string
-          nullable: true
 
