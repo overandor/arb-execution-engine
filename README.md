@@ -63,11 +63,13 @@ python -c "from arb_engine import Signer; s = Signer(); s.save_keypair('burner_w
 cp .env.example .env
 # Edit .env with your private key
 
-# Run in dry run mode (no execution, for testing)
-python arb_engine.py --dry-run
+# Option 1: Run as script (single trade test)
+python arb_engine.py --dry-run  # Dry run mode
+python arb_engine.py            # Real execution
 
-# Run single trade test (REAL EXECUTION - USE SMALL AMOUNTS)
-python arb_engine.py
+# Option 2: Run as API server
+uvicorn api_server:app --host 0.0.0.0 --port 8000
+# OpenAPI docs: http://localhost:8000/docs
 ```
 
 ## Environment
