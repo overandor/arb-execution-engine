@@ -1,0 +1,26 @@
+# Solana
+solana==0.31.0
+solders==0.18.0
+
+# HTTP
+aiohttp==3.9.0
+httpx==0.26.0
+
+# Async
+asyncio==3.4.3
+
+# Data
+pandas==2.1.0
+numpy==1.26.0
+
+# API
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+
+# Utilities
+python-dotenv==1.0.0
+pydantic-settings==2.1.0
+
+# Jito
+# Note: Jito SDK may need to be installed from source or use raw HTTP
