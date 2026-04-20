@@ -42,31 +42,34 @@ paths:
             schema:
               type: object
               required:
-                - token
-                - input_mint
-                - output_mint
-                - amount_lamports
+                - inputMint
+                - outputMint
+                - amountLamports
               properties:
-                token:
-                  type: string
-                  example: SOL→USDC
-                  description: Token pair identifier
-                input_mint:
+                inputMint:
                   type: string
                   example: So11111111111111111111111111111111111111112
                   description: Input token mint address
-                output_mint:
+                outputMint:
                   type: string
                   example: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
                   description: Output token mint address
-                amount_lamports:
+                amountLamports:
                   type: integer
                   example: 10000000
                   description: Amount in lamports
-                dry_run:
+                slippageBps:
+                  type: integer
+                  example: 50
+                  description: Slippage tolerance in basis points (1 = 0.01%)
+                maxPriorityFee:
+                  type: integer
+                  example: 10000
+                  description: Maximum priority fee in lamports
+                dryRun:
                   type: boolean
                   example: false
-                  description: If true, run without executing transaction
+                  description: If true, run without executing transaction (stops after signing)
       responses:
         '200':
           description: Trade executed
@@ -166,35 +169,65 @@ components:
       properties:
         token:
           type: string
+          example: SOL→USDC
         input_amount:
           type: number
+          example: 10000000
         expected_output:
           type: number
           nullable: true
+          example: 9950000
         actual_output:
           type: number
           nullable: true
+          example: 9900000
         expected_profit:
           type: number
           nullable: true
+          example: 50000
         actual_profit:
           type: number
           nullable: true
+          example: -50000
         latency_ms:
           type: number
           nullable: true
+          example: 1250.5
         status:
           type: string
-          enum: [success, failed, dropped, killed, dry_run, slippage_exceeded, timeout, insufficient_edge, submitted]
+          enum:
+            - submitted
+            - success
+            - failed
+            - dropped
+            - slippage_exceeded
+            - timeout
+            - insufficient_edge
+            - killed
+            - dry_run
+          description: |
+            submitted: Transaction sent to Jito, awaiting confirmation
+            success: Transaction confirmed and profitable
+            failed: Transaction failed (error details in error field)
+            dropped: Transaction never landed (Jito accepted but not included)
+            slippage_exceeded: Price moved beyond slippage tolerance
+            timeout: Transaction confirmation timed out
+            insufficient_edge: Expected profit below minimum threshold
+            killed: Kill switch triggered (rolling PnL too low or win rate too low)
+            dry_run: Test mode, transaction not sent
         error:
           type: string
           nullable: true
+          example: Jito execution failed: insufficient funds
         transaction_id:
           type: string
           nullable: true
+          example: 5j7s6i...
         priority_fee:
           type: number
           nullable: true
+          example: 3000
+          description: Priority fee in lamports
 
     Trade:
       type: object
@@ -240,15 +273,38 @@ components:
       properties:
         total_trades:
           type: integer
+          example: 50
+          description: Total number of trades executed
         successful_trades:
           type: integer
+          example: 35
+          description: Number of profitable trades
         win_rate:
           type: number
           format: float
-        total_pnl:
+          example: 0.7
+          description: Percentage of successful trades (0.0 to 1.0)
+        total_pnl_sol:
           type: number
-        avg_profit:
+          example: 0.005
+          description: Total profit/loss in SOL (can be negative)
+        avg_profit_sol:
           type: number
+          example: 0.0001
+          description: Average profit per trade in SOL (can be negative)
+        avg_latency_ms:
+          type: number
+          example: 1250.5
+          description: Average execution latency in milliseconds
+        last_10_trades_pnl:
+          type: number
+          example: -0.001
+          description: PnL of last 10 trades in SOL (for kill switch)
+        dropped_rate:
+          type: number
+          format: float
+          example: 0.1
+          description: Percentage of trades that were dropped (never landed)
 
     Opportunity:
       type: object
@@ -276,11 +332,3 @@ components:
           type: string
           nullable: true
 
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-
-security:
-  - bearerAuth: []
