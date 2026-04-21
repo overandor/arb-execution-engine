@@ -248,7 +248,26 @@ After execution:
 
 ## API Endpoints
 
-- `GET /signals` - Current opportunities
-- `GET /trades` - Trade history
+**Public Endpoints (no auth required):**
+- `GET /health` - Health check
 - `GET /metrics` - Performance metrics
-- `POST /manual-trade` - Manual execution override
+- `GET /metrics/live` - Live metrics with rolling PnL and recent trades
+
+**Protected Endpoints (requires x-api-key header):**
+- `POST /trade` - Execute a single arbitrage trade
+- `GET /trades` - Get trade history
+- `GET /trades/{id}` - Get specific trade by ID
+
+**API Key Authentication:**
+```bash
+curl -X POST http://localhost:8000/trade \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: your_api_key" \
+  -d '{
+    "inputMint": "So11111111111111111111111111111111111111112",
+    "outputMint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "amountLamports": 10000000,
+    "slippageBps": 50,
+    "dryRun": false
+  }'
+```
