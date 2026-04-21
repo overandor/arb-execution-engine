@@ -3,7 +3,7 @@ FastAPI wrapper for Arb Execution Engine
 Thin adapter layer - execution engine remains pure
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, List
@@ -23,6 +23,31 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# API Key Configuration
+API_KEY = os.getenv("API_KEY", "dev_key_change_in_production")
+
+# ============================================================================
+# API Key Middleware
+# ============================================================================
+
+@app.middleware("http")
+async def api_key_middleware(request: Request, call_next):
+    """Verify API key for protected endpoints"""
+    # Skip auth for health check and metrics (public endpoints)
+    if request.url.path in ["/health", "/metrics", "/metrics/live"]:
+        return await call_next(request)
+    
+    # Verify API key
+    api_key = request.headers.get("x-api-key")
+    if not api_key or api_key != API_KEY:
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            content={"detail": "Invalid or missing API key"}
+        )
+    
+    return await call_next(request)
 
 # Global engine instance (singleton)
 engine: Optional[ExecutionEngine] = None
@@ -141,6 +166,40 @@ async def get_trade(trade_id: int):
 async def get_metrics():
     """Get performance metrics"""
     return db.get_metrics()
+
+
+@app.get("/metrics/live")
+async def get_live_metrics():
+    """
+    Get live metrics for dashboard (time-series feel)
+    
+    Returns rolling PnL, win rate, latency, recent trades
+    """
+    trades = db.get_recent_trades(limit=50)
+    
+    # Calculate rolling metrics
+    successful = [t for t in trades if t.get('status') == 'success']
+    win_rate = len(successful) / len(trades) if trades else 0.0
+    
+    # Calculate rolling PnL (last 20 trades)
+    recent_trades = trades[:20]
+    pnl_rolling = []
+    for t in recent_trades:
+        pnl = t.get('actual_profit') or 0
+        pnl_rolling.append(pnl)
+    
+    # Calculate average latency
+    latencies = [t.get('latency_ms') for t in trades if t.get('latency_ms')]
+    avg_latency = sum(latencies) / len(latencies) if latencies else 0.0
+    
+    return {
+        "pnl_rolling": pnl_rolling,
+        "win_rate": round(win_rate, 3),
+        "avg_latency_ms": round(avg_latency, 2),
+        "recent_trades": trades[:10],  # Last 10 trades
+        "total_trades": len(trades),
+        "execution_mode": os.getenv("EXECUTION_MODE", "sim")
+    }
 
 
 # REMOVED: /scanner/opportunities endpoint

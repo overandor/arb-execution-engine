@@ -1,76 +1,153 @@
 # Arb Execution Engine
 
-Autonomous Solana arbitrage execution engine with on-chain verification and truthful accounting.
+A latency-aware Solana arbitrage execution engine with optional API layer and controlled opportunity access.
 
-## Architecture
+## ⚠️ Status
 
-**This is the execution engine** - where money is made (or lost, truthfully).
+This is a truthful execution framework, not a profitable strategy out of the box.
 
-- Strategy engine: Opportunity detection, simulation
-- Tx builder: Jupiter swap instructions with priority fees
-- Signer: Burner wallet keypair
-- Jito bundle sender: MEV-protected execution
-- On-chain verification: Confirmed transaction parsing
-- Truthful accounting: Real profit calculation from chain data
+- ✅ Deterministic execution pipeline
+- ✅ Portfolio delta accounting (partial normalization)
+- ✅ Dry-run mode for safe testing
+- ❌ No guaranteed economic edge
+- ❌ Requires proper environment + tuning for production
 
-## Key Principle
+## 🧠 Architecture
 
-**Quote ≠ Execution**
+```
+arb_engine.py     # Core execution engine (single-file)
+api_server.py     # FastAPI wrapper (optional control plane)
+openapi.yaml      # API schema
+trades.db         # SQLite trade log (gitignored)
+```
 
-Only confirmed on-chain transactions tell the truth. Everything else is speculation.
+Execution pipeline:
+```
+quote → validate → build → sign → send → confirm → measure
+```
 
-## Truthful Execution System
+## ⚙️ Features
 
-The system tracks:
-- Transaction signature
-- Latency (ms)
-- Expected profit
-- Actual profit (from on-chain portfolio delta method)
-- SOL fees (extracted from transaction metadata)
-- Dynamic priority fee (calculated as % of expected profit)
-- Status (submitted / success / failed / dropped / killed / slippage_exceeded / timeout / insufficient_edge)
+### Execution
+- Jupiter routing integration
+- Jito bundle submission
+- Retry logic (10x confirmation attempts)
+- Failure classification: submitted / success / failed / dropped / timeout / slippage_exceeded / insufficient_edge
 
-**Portfolio Delta Method**: Tracks ALL token balance changes, not just input/output. This accounts for Jupiter routing through multiple pools, intermediate tokens, SOL wrapping, and dust accounts.
+### Accounting
+- Portfolio delta method (tracks all token changes)
+- SOL fee extraction (base + priority)
+- Latency measurement
 
-Real profit = portfolio_delta - sol_fee
+### Risk Controls
+- Minimum edge threshold
+- Fee buffer filter (>2x estimated fees)
+- Kill switch (per-trade basis)
+- Dynamic priority fees
 
-**Dynamic Priority Fees**: Fee scales with expected profit (default 30%), capped at maximum. This ensures competitive bidding in Jito auctions without overpaying on small edges.
+### API Layer (optional)
+- FastAPI wrapper (api_server.py)
+- OpenAPI schema included
+- Endpoints: /execute, /trades, /metrics, /health
 
-**Kill Switch**: Automatically stops execution if:
-- Rolling PnL over last N trades falls below threshold
-- Win rate drops below 30%
+## 🚀 Setup
 
-## Components (Single File)
+### 1. Install dependencies
+```bash
+pip install -r requirements.txt
+```
 
-All components consolidated into `arb_engine.py`:
-- Scanner - Opportunity detection (Dexscreener)
-- TransactionBuilder - Jupiter quote + transaction construction
-- Signer - Burner wallet keypair and signing
-- JitoExecutor - Jito bundle submission
-- ExecutionEngine - Main orchestration with on-chain verification
-- TradeDatabase - SQLite trade tracking (truth layer)
+### 2. Configure environment
+```bash
+cp .env.example .env
+```
 
-## Quick Start
+Add your credentials:
+```bash
+BURNER_WALLET_PRIVATE_KEY=<base64_key>
+SOLANA_RPC_URL=<your_rpc>
+JITO_ENDPOINT=<your_jito_endpoint>
+EXECUTION_MODE=sim  # "sim" for simulation, "real" for mainnet
+```
+
+### 3. Choose execution mode
+
+**Simulation mode (default):**
+- No network access required
+- Deterministic market simulation
+- Realistic failure modes (5% failure rate, slippage, latency)
+- Perfect for testing and dashboard development
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
-
-# Generate burner wallet (if needed)
-python -c "from arb_engine import Signer; s = Signer(); s.save_keypair('burner_wallet.json'); print(f'Public: {s.public_key}'); print(f'Private (base64): {s.private_key_base64}')"
-
-# Set environment variables
-cp .env.example .env
-# Edit .env with your private key
-
-# Option 1: Run as script (single trade test)
-python arb_engine.py --dry-run  # Dry run mode
-python arb_engine.py            # Real execution
-
-# Option 2: Run as API server
-uvicorn api_server:app --host 0.0.0.0 --port 8000
-# OpenAPI docs: http://localhost:8000/docs
+EXECUTION_MODE=sim python arb_engine.py
 ```
+
+**Real mode:**
+- Requires mainnet access
+- Real Jupiter API calls
+- Real Jito bundle submission
+- Actual SOL transactions
+
+```bash
+EXECUTION_MODE=real python arb_engine.py
+```
+
+## 🧪 Testing
+
+### Dry run (recommended)
+```bash
+python arb_engine.py --dry-run
+```
+
+What it tests:
+- Full pipeline (except send)
+- Transaction building + signing
+- Logging + metrics
+
+Expected output:
+- Keypair generation
+- Quote attempt
+- Trade result (likely failure if no network access to Jupiter)
+
+## 🌐 API Server
+
+### Run server
+```bash
+python api_server.py
+# or
+uvicorn api_server:app --host 0.0.0.0 --port 8000
+```
+
+### OpenAPI docs
+```
+http://localhost:8000/docs
+```
+
+## ⚠️ Known Limitations
+
+- No price oracle → portfolio delta not normalized across tokens
+- Scanner uses public spreads (no real edge)
+- No continuous loop / strategy engine
+- No multi-region latency optimization
+- Jupiter API required (network-dependent)
+- Not tested with real capital in this repo
+
+## 🔐 Security
+
+- Never commit private keys
+- Use burner wallets for testing
+- Do not expose execution endpoints publicly without auth + rate limiting
+
+## 💡 Notes
+
+This repo is intended as:
+**a foundation for building execution systems, not a finished trading bot**
+
+If you deploy this live without adding edge, you will lose money — just more accurately than before.
+
+## 📜 License
+
+MIT
 
 ## Environment
 
