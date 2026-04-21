@@ -2,6 +2,8 @@
 *.db
 *.sqlite
 *.sqlite3
+trades.db
+gateio_trades.db
 
 # Environment
 .env
@@ -27,6 +29,7 @@ ENV/
 # Logs
 *.log
 logs/
+gateio_execution.log
 
 # OS
 .DS_Store
