@@ -1,6 +1,10 @@
 # Arb Execution Engine
 
-A latency-aware Solana arbitrage execution engine with optional API layer and controlled opportunity access.
+A latency-aware execution engine with multi-exchange support:
+- Solana arbitrage (Jupiter + Jito)
+- Gate.io spot trading with edge detection
+- Portfolio delta accounting
+- Risk controls and kill switches
 
 ## ⚠️ Status
 
@@ -9,16 +13,19 @@ This is a truthful execution framework, not a profitable strategy out of the box
 - ✅ Deterministic execution pipeline
 - ✅ Portfolio delta accounting (partial normalization)
 - ✅ Dry-run mode for safe testing
+- ✅ Gate.io integration with edge detection
 - ❌ No guaranteed economic edge
 - ❌ Requires proper environment + tuning for production
 
 ## 🧠 Architecture
 
 ```
-arb_engine.py     # Core execution engine (single-file)
-api_server.py     # FastAPI wrapper (optional control plane)
-openapi.yaml      # API schema
-trades.db         # SQLite trade log (gitignored)
+arb_engine.py         # Solana execution engine (single-file)
+gateio_execution.py   # Gate.io spot trading with edge detection
+api_server.py         # FastAPI wrapper (optional control plane)
+openapi.yaml          # API schema
+trades.db             # SQLite trade log (gitignored)
+gateio_trades.db      # Gate.io trade log (gitignored)
 ```
 
 Execution pipeline:
@@ -91,6 +98,39 @@ EXECUTION_MODE=sim python arb_engine.py
 ```bash
 EXECUTION_MODE=real python arb_engine.py
 ```
+
+## Gate.io Execution
+
+The engine also supports Gate.io spot trading with edge detection:
+
+### Setup
+
+Add Gate.io credentials to `.env`:
+```bash
+GATEIO_API_KEY=your_api_key
+GATEIO_API_SECRET=your_api_secret
+MAX_RISK_PER_TRADE=0.02  # 2% risk per trade
+```
+
+### Run Gate.io execution
+
+```bash
+python gateio_execution.py
+```
+
+This will:
+- Fetch account balance
+- Calculate edge from orderbook depth
+- Execute trades only when edge > minimum threshold
+- Track PnL with portfolio delta accounting
+- Kill switch if rolling PnL drops below threshold
+
+### Risk Controls
+
+- Minimum edge filter (0.5% default)
+- Maximum risk per trade (2% default)
+- Kill switch on rolling losses
+- Orderbook depth validation
 
 ## 🧪 Testing
 
